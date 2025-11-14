@@ -83,7 +83,7 @@ class SupabaseStorage:
 
     def upload_file(self, local_path: str, remote_path: str) -> str:
         """
-        上传文件到 Supabase Storage（带重试机制）
+        使用REST API上传文件到 Supabase Storage（避免SDK的HTTP/2问题）
 
         Args:
             local_path: 本地文件路径
@@ -92,37 +92,55 @@ class SupabaseStorage:
         Returns:
             公开访问 URL
         """
-        import time
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
 
         with open(local_path, 'rb') as f:
             file_data = f.read()
 
-        # 重试上传（应对HTTP/2 StreamReset错误）
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                # 上传文件
-                self.client.storage.from_(self.bucket).upload(
-                    remote_path,
-                    file_data,
-                    file_options={"content-type": "text/markdown; charset=utf-8"}
-                )
+        # 创建requests session，强制HTTP/1.1
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=5,
+            backoff_factor=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=1,
+            pool_maxsize=1
+        )
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
 
-                # 获取公开 URL
-                public_url = self.client.storage.from_(self.bucket).get_public_url(remote_path)
-                return public_url
+        # 使用Supabase REST API上传
+        upload_url = f"{SUPABASE_URL}/storage/v1/object/{self.bucket}/{remote_path}"
 
-            except Exception as e:
-                error_msg = str(e)
-                if 'StreamReset' in error_msg or 'stream_id' in error_msg:
-                    if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2
-                        print(f"  Supabase上传失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                        print(f"  等待 {wait_time} 秒后重试...")
-                        time.sleep(wait_time)
-                        continue
-                # 非StreamReset错误或最后一次尝试失败，直接抛出
-                raise
+        headers = {
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+            'Content-Type': 'text/markdown; charset=utf-8',
+            'Connection': 'close'
+        }
+
+        try:
+            response = session.post(
+                upload_url,
+                data=file_data,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            # 构建公开URL
+            public_url = f"{SUPABASE_URL}/storage/v1/object/public/{self.bucket}/{remote_path}"
+            return public_url
+
+        except Exception as e:
+            print(f"上传失败: {e}")
+            raise
+        finally:
+            session.close()
 
     def upload_directory(self, local_dir: str, remote_prefix: str) -> dict:
         """
@@ -164,21 +182,56 @@ class SupabaseStorage:
                 safe_filename = f"{file_type}_{file_counter[extension]:03d}{extension}"
                 remote_path = f"{remote_prefix}/{safe_filename}"
 
-                # 上传文件
+                # 上传文件（使用REST API避免HTTP/2问题）
                 with open(file_path, 'rb') as f:
                     file_data = f.read()
 
                 # 确定 content-type
                 content_type = self._get_content_type(extension)
 
-                self.client.storage.from_(self.bucket).upload(
-                    remote_path,
-                    file_data,
-                    file_options={"content-type": content_type}
-                )
+                # 使用REST API上传
+                import requests
+                from requests.adapters import HTTPAdapter
+                from urllib3.util.retry import Retry
 
-                public_url = self.client.storage.from_(self.bucket).get_public_url(remote_path)
-                uploaded_files[str(file_path)] = public_url
+                session = requests.Session()
+                retry_strategy = Retry(
+                    total=5,
+                    backoff_factor=2,
+                    status_forcelist=[429, 500, 502, 503, 504],
+                )
+                adapter = HTTPAdapter(
+                    max_retries=retry_strategy,
+                    pool_connections=1,
+                    pool_maxsize=1
+                )
+                session.mount('http://', adapter)
+                session.mount('https://', adapter)
+
+                upload_url = f"{SUPABASE_URL}/storage/v1/object/{self.bucket}/{remote_path}"
+                headers = {
+                    'Authorization': f'Bearer {SUPABASE_KEY}',
+                    'Content-Type': content_type,
+                    'Connection': 'close'
+                }
+
+                try:
+                    response = session.post(
+                        upload_url,
+                        data=file_data,
+                        headers=headers,
+                        timeout=30
+                    )
+                    response.raise_for_status()
+
+                    # 构建公开URL
+                    public_url = f"{SUPABASE_URL}/storage/v1/object/public/{self.bucket}/{remote_path}"
+                    uploaded_files[str(file_path)] = public_url
+                except Exception as e:
+                    print(f"上传媒体文件失败 {remote_path}: {e}")
+                    # 继续处理其他文件
+                finally:
+                    session.close()
 
         return uploaded_files
 
