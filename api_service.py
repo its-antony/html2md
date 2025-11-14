@@ -251,6 +251,49 @@ class SupabaseStorage:
         }
         return content_types.get(extension.lower(), 'application/octet-stream')
 
+    def update_markdown_links(self, md_file_path: str, base_name: str, remote_prefix: str, media_files: dict):
+        """
+        更新Markdown文件中的媒体链接，将本地路径替换为Supabase公开URL
+
+        Args:
+            md_file_path: Markdown文件的本地路径
+            base_name: 文章的基本名称（用于匹配相对路径）
+            remote_prefix: Supabase上的远程路径前缀
+            media_files: 本地路径到公开URL的映射字典
+        """
+        import re
+
+        # 读取MD文件内容
+        with open(md_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # 构建本地文件夹名称（base_name_files）
+        local_dir_pattern = f"{base_name}_files"
+
+        # 为每个上传的文件创建替换映射
+        # media_files的key是完整本地路径，我们需要提取文件名
+        replacements = {}
+        for local_path, public_url in media_files.items():
+            # 提取文件名（例如：从 .../image_001.jpg 提取 image_001.jpg）
+            filename = os.path.basename(local_path)
+            # 构建MD中的相对路径模式（可能有<>包裹或者没有）
+            # 例如：用 Claude Code_files/image_001.jpg 或 <用 Claude Code_files/image_001.jpg>
+            local_ref_1 = f"{local_dir_pattern}/{filename}"
+            local_ref_2 = f"<{local_dir_pattern}/{filename}>"
+
+            replacements[local_ref_1] = public_url
+            replacements[local_ref_2] = public_url
+
+        # 执行替换
+        for old_path, new_url in replacements.items():
+            content = content.replace(old_path, new_url)
+
+        # 写回文件
+        with open(md_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        print(f"✓ 已更新 {len(replacements)} 个媒体链接")
+
     def save_metadata(self, metadata: dict):
         """保存转换元数据到数据库"""
         try:
@@ -304,19 +347,23 @@ def process_conversion(url: str, download_media: bool) -> dict:
         if not storage:
             raise Exception("Supabase storage not configured")
 
-        # 使用 URL 安全的文件名（避免中文和特殊字符）
-        safe_filename = f"{unique_id}.md"
-
-        # 上传 Markdown 文件
-        md_remote_path = safe_filename
-        md_public_url = storage.upload_file(md_file_path, md_remote_path)
-
-        # 上传媒体文件（如果有）
+        # 先上传媒体文件（如果有）
         media_files = {}
         media_dir = os.path.join(output_dir, f"{base_name}_files")
         if download_media and os.path.exists(media_dir):
             # 使用 unique_id 作为远程路径前缀，确保路径安全
             media_files = storage.upload_directory(output_dir, f"{unique_id}_files")
+
+            # 更新 Markdown 文件中的媒体链接
+            if media_files:
+                storage.update_markdown_links(md_file_path, base_name, f"{unique_id}_files", media_files)
+
+        # 使用 URL 安全的文件名（避免中文和特殊字符）
+        safe_filename = f"{unique_id}.md"
+
+        # 上传更新后的 Markdown 文件
+        md_remote_path = safe_filename
+        md_public_url = storage.upload_file(md_file_path, md_remote_path)
 
         # 保存元数据
         metadata = {
