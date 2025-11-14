@@ -279,10 +279,19 @@ class HTML2Markdown:
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Connection': 'close',  # 强制关闭keep-alive，避免HTTP/2问题
         }
         self.download_media = download_media
         self.media_folder = None
         self.media_map = {}
+
+        # 创建Session并禁用HTTP/2
+        self.session = requests.Session()
+        # 强制使用HTTP/1.1
+        from requests.adapters import HTTPAdapter
+        adapter = HTTPAdapter(max_retries=3)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
         # 注册所有解析器
         self.parsers = {
@@ -296,7 +305,7 @@ class HTML2Markdown:
     def fetch_page(self, url):
         """获取网页内容"""
         try:
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = self.session.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             response.encoding = response.apparent_encoding or 'utf-8'
             return response.text
@@ -307,7 +316,7 @@ class HTML2Markdown:
     def download_file(self, url, save_path):
         """下载单个文件"""
         try:
-            response = requests.get(url, headers=self.headers, timeout=30, stream=True)
+            response = self.session.get(url, headers=self.headers, timeout=30, stream=True)
             response.raise_for_status()
 
             with open(save_path, 'wb') as f:
