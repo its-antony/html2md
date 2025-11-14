@@ -304,14 +304,33 @@ class HTML2Markdown:
 
     def fetch_page(self, url):
         """获取网页内容"""
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=30)
-            response.raise_for_status()
-            response.encoding = response.apparent_encoding or 'utf-8'
-            return response.text
-        except requests.exceptions.RequestException as e:
-            print(f"错误: 无法获取网页内容 - {e}")
-            return None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 使用更兼容的配置
+                response = self.session.get(
+                    url,
+                    headers=self.headers,
+                    timeout=30,
+                    verify=True,
+                    allow_redirects=True
+                )
+                response.raise_for_status()
+                response.encoding = response.apparent_encoding or 'utf-8'
+                return response.text
+            except Exception as e:
+                error_msg = str(e)
+                # 特殊处理HTTP/2 StreamReset错误
+                if 'StreamReset' in error_msg or 'stream_id' in error_msg:
+                    print(f"警告: HTTP/2连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(1)  # 等待1秒后重试
+                        continue
+                print(f"错误: 无法获取网页内容 - {e}")
+                if attempt == max_retries - 1:
+                    raise  # 最后一次尝试失败时抛出异常
+        return None
 
     def download_file(self, url, save_path):
         """下载单个文件"""
