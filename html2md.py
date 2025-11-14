@@ -304,7 +304,9 @@ class HTML2Markdown:
 
     def fetch_page(self, url):
         """获取网页内容"""
-        max_retries = 3
+        max_retries = 5  # 增加重试次数
+        import time
+
         for attempt in range(max_retries):
             try:
                 # 使用更兼容的配置
@@ -322,14 +324,45 @@ class HTML2Markdown:
                 error_msg = str(e)
                 # 特殊处理HTTP/2 StreamReset错误
                 if 'StreamReset' in error_msg or 'stream_id' in error_msg:
+                    wait_time = (attempt + 1) * 2  # 指数退避：2s, 4s, 6s, 8s, 10s
                     print(f"警告: HTTP/2连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
                     if attempt < max_retries - 1:
-                        import time
-                        time.sleep(1)  # 等待1秒后重试
+                        print(f"  等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                        # 重新创建session，强制使用HTTP/1.1
+                        if attempt >= 2:  # 从第3次尝试开始禁用HTTP/2
+                            import requests
+                            from requests.adapters import HTTPAdapter
+                            from urllib3.util.retry import Retry
+
+                            self.session = requests.Session()
+                            # 配置重试策略
+                            retry_strategy = Retry(
+                                total=3,
+                                backoff_factor=1,
+                                status_forcelist=[429, 500, 502, 503, 504],
+                            )
+                            adapter = HTTPAdapter(max_retries=retry_strategy)
+                            self.session.mount("http://", adapter)
+                            self.session.mount("https://", adapter)
+                            print("  已切换到 HTTP/1.1")
                         continue
-                print(f"错误: 无法获取网页内容 - {e}")
-                if attempt == max_retries - 1:
-                    raise  # 最后一次尝试失败时抛出异常
+                    else:
+                        raise  # 最后一次尝试仍失败
+                elif 'ConnectionError' in error_msg or 'timeout' in error_msg.lower():
+                    wait_time = (attempt + 1) * 2
+                    print(f"警告: 网络错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        print(f"  等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise
+                else:
+                    # 其他错误直接抛出
+                    print(f"错误: 无法获取网页内容 - {e}")
+                    raise
+
         return None
 
     def download_file(self, url, save_path):
