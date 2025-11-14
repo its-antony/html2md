@@ -285,11 +285,29 @@ class HTML2Markdown:
         self.media_folder = None
         self.media_map = {}
 
-        # 创建Session并禁用HTTP/2
+        # 创建Session并强制使用HTTP/1.1（避免HTTP/2 StreamReset错误）
         self.session = requests.Session()
-        # 强制使用HTTP/1.1
+
+        # 配置HTTPAdapter并禁用连接池（强制每次请求新建连接）
         from requests.adapters import HTTPAdapter
-        adapter = HTTPAdapter(max_retries=3)
+        from urllib3.util.retry import Retry
+
+        # 配置重试策略
+        retry_strategy = Retry(
+            total=5,
+            backoff_factor=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+
+        # 创建adapter，禁用连接池
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=1,
+            pool_maxsize=1,
+            pool_block=False
+        )
+
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
 
