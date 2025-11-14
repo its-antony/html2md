@@ -1,0 +1,23 @@
+# Cloudflare Workers 配置文件
+name = "html2md-api"
+main = "api_service.py"
+compatibility_date = "2024-01-01"
+
+# Python Workers 支持（需要 Cloudflare Workers Paid Plan）
+[build]
+command = "pip install -r requirements.txt"
+
+# 环境变量（敏感信息在 Cloudflare Dashboard 配置）
+# 或使用 wrangler secret put 命令
+[vars]
+SUPABASE_BUCKET = "markdown-files"
+
+# 路由配置
+routes = [
+  { pattern = "html2md.yourdomain.com", zone_name = "yourdomain.com" }
+]
+
+# 注意：Supabase URL 和 KEY 等敏感信息应该使用 secrets
+# 运行命令：
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_KEY
