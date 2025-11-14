@@ -18,10 +18,10 @@ import uuid
 from html2md import HTML2Markdown
 from supabase import create_client, Client
 
-# 环境变量配置
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "markdown-files")
+# 环境变量配置（strip()去除可能的空格和换行符）
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "markdown-files").strip()
 
 app = FastAPI(
     title="HTML to Markdown API",
