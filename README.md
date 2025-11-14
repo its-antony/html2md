@@ -1,286 +1,291 @@
-# HTML转Markdown工具
+# HTML to Markdown Web API Service
 
-一个强大的Python工具，用于将网页内容转换为Markdown格式，支持图片和视频资源的提取与下载。
+将网页 URL 转换为 Markdown 格式的 Web API 服务，支持多个平台（微信公众号、知乎、小红书、掘金、CSDN等），使用 Supabase 存储，可部署到 Cloudflare Workers。
 
-## ✨ 功能特点
+## 功能特性
 
-- 🎯 **统一入口** - 一个脚本支持多个平台
-- 🤖 **自动识别** - 自动检测网站类型并使用对应的解析器
-- 📝 **完美转换** - 自动提取标题、作者、发布时间
-- 🖼️ **媒体下载** - 支持下载图片和视频到本地
-- 📁 **智能管理** - 自动创建资源文件夹，使用相对路径
-- 🔧 **易于扩展** - 模块化设计，方便添加新平台支持
+- RESTful API 接口，方便客户端调用
+- 支持多平台网页转换（微信公众号、知乎、小红书、掘金、CSDN、通用网页）
+- 自动下载并存储媒体资源（图片、视频）
+- 使用 Supabase 进行文件存储和元数据管理
+- 支持部署到 Cloudflare Workers
+- 完整的健康检查和错误处理
 
-## 🌐 支持的平台
+## 支持的平台
 
-| 平台 | 支持程度 | 说明 |
-|------|----------|------|
-| 微信公众号 | ⭐⭐⭐⭐⭐ | 完美支持，强烈推荐 |
-| 知乎 | ⭐⭐⭐ | 基础支持，部分需登录 |
-| 掘金 | ⭐⭐⭐⭐ | 较好支持 |
-| CSDN | ⭐⭐⭐⭐ | 较好支持 |
-| 其他网站 | ⭐⭐ | 通用解析，效果视网站而定 |
+- 微信公众号 (mp.weixin.qq.com)
+- 知乎 (zhihu.com)
+- 小红书 (xiaohongshu.com)
+- 掘金 (juejin.cn)
+- CSDN (csdn.net)
+- 通用网页
 
-## 📦 安装依赖
+## 快速开始
+
+### 1. 环境准备
 
 ```bash
+# 克隆项目
+git clone <your-repo-url>
+cd html2md
+
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-或者单独安装：
+### 2. 配置环境变量
+
+创建 `.env` 文件：
 
 ```bash
-pip install requests beautifulsoup4 html2text lxml
+# Supabase 配置
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_BUCKET=markdown-files
+
+# 服务端口（可选，默认8000）
+PORT=8000
 ```
 
-## 🚀 快速开始
+### 3. 初始化 Supabase 数据库
 
-### 基本使用
+在 Supabase 控制台执行 `supabase_init.sql` 中的 SQL 语句创建必要的表和存储桶。
+
+### 4. 启动服务
 
 ```bash
-# 提取微信公众号文章（保留在线链接）
-python html2md.py "https://mp.weixin.qq.com/s/xxxxx"
+# 本地开发
+python api_service.py
 
-# 下载图片和视频到本地
-python html2md.py "https://mp.weixin.qq.com/s/xxxxx" --download
+# 或使用 uvicorn
+uvicorn api_service:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 其他平台
+服务启动后访问：
+- API 文档：http://localhost:8000/docs
+- 健康检查：http://localhost:8000/health
+
+## API 使用
+
+### POST 转换请求
 
 ```bash
-# 知乎文章
-python html2md.py "https://zhuanlan.zhihu.com/p/xxxxx"
-
-# 掘金文章
-python html2md.py "https://juejin.cn/post/xxxxx"
-
-# CSDN文章
-python html2md.py "https://blog.csdn.net/xxx/article/details/xxxxx"
+curl -X POST "http://localhost:8000/api/convert" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://mp.weixin.qq.com/s/xxxxx",
+    "download_media": true
+  }'
 ```
 
-## 📖 使用说明
-
-### 命令行参数
+### GET 转换请求（简化版）
 
 ```bash
-python html2md.py <URL> [选项]
+curl "http://localhost:8000/api/convert?url=https://mp.weixin.qq.com/s/xxxxx&download_media=true"
 ```
 
-**参数：**
-- `URL` - 网页链接（必需）
-- `-d, --download` - 下载图片和视频到本地
-- `-o, --output` - 指定输出文件路径
-- `--output-dir` - 指定输出目录（默认：output）
+### 响应示例
 
-### 使用示例
-
-```bash
-# 示例1: 基本提取（保留在线链接，保存到output目录）
-python html2md.py "https://mp.weixin.qq.com/s/xxxxxxxxxxxx"
-
-# 示例2: 下载图片和视频到本地
-python html2md.py "https://mp.weixin.qq.com/s/xxxxxxxxxxxx" --download
-
-# 示例3: 指定输出文件名
-python html2md.py "https://mp.weixin.qq.com/s/xxxxxxxxxxxx" -o my_article.md -d
-
-# 示例4: 使用自定义输出目录
-python html2md.py "https://zhuanlan.zhihu.com/p/xxxxx" --output-dir ./articles
-
-# 示例5: 指定完整路径
-python html2md.py "https://juejin.cn/post/xxxxx" -o ./docs/article.md -d
-```
-
-### 查看帮助
-
-```bash
-python html2md.py -h
-```
-
-## 📂 输出格式
-
-### Markdown文件
-
-生成的Markdown文件包含：
-
-```markdown
-# 文章标题
-
-**作者:** 作者名
-**来源:** 微信公众号
-**原文链接:** https://...
-
----
-
-文章正文内容...
-
-![](图片链接或本地路径)
-```
-
-### 文件结构
-
-默认保存到 `output` 目录：
-
-```
-output/
-├── 文章标题.md              # Markdown文件
-└── 文章标题_files/          # 媒体资源文件夹（使用--download时）
-    ├── image_001.jpg        # 图片文件
-    ├── image_002.jpg
-    ├── ...
-    └── video_001.mp4        # 视频文件
-```
-
-**注意：**
-- 默认情况下，所有文件保存到 `output` 目录，保持工作目录整洁
-- 图片路径使用相对路径（如：`文章标题_files/image_001.jpg`）
-- 包含空格的路径会自动用 `<>` 包裹以确保正确显示
-
-## 🏗️ 架构设计
-
-### 模块化设计
-
-```
-html2md.py
-├── PlatformDetector    - 平台检测器
-├── BaseParser          - 解析器基类
-├── WechatParser        - 微信公众号解析器
-├── ZhihuParser         - 知乎解析器
-├── JuejinParser        - 掘金解析器
-├── CSDNParser          - CSDN解析器
-├── GenericParser       - 通用解析器
-└── HTML2Markdown       - 主转换类
-```
-
-### 工作流程
-
-1. **平台检测** → 自动识别URL所属平台
-2. **内容获取** → 发送HTTP请求获取HTML
-3. **内容解析** → 使用对应的解析器提取内容
-4. **媒体处理** → 提取图片/视频，可选下载
-5. **格式转换** → HTML转Markdown
-6. **文件保存** → 保存到指定位置
-
-## 🔧 扩展支持新平台
-
-如果需要支持新的网站，只需：
-
-1. **创建新的解析器类**
-
-```python
-class NewSiteParser(BaseParser):
-    def __init__(self):
-        super().__init__()
-        self.platform_name = '新网站'
-
-    def parse(self, soup):
-        # 实现解析逻辑
-        title = soup.find('h1', class_='title').get_text()
-        content = soup.find('div', class_='content')
-
-        return {
-            'title': title,
-            'author': None,
-            'content': content
-        }
-```
-
-2. **注册解析器**
-
-在 `PlatformDetector.detect()` 和 `HTML2Markdown.__init__()` 中添加：
-
-```python
-# 检测
-if 'newsite.com' in url:
-    return 'newsite'
-
-# 注册
-self.parsers = {
-    ...
-    'newsite': NewSiteParser()
+```json
+{
+  "success": true,
+  "message": "转换成功",
+  "data": {
+    "md_url": "https://your-supabase-url/storage/v1/object/public/markdown-files/...",
+    "md_filename": "article_title.md",
+    "media_files": 5,
+    "unique_id": "20231114_abc123"
+  }
 }
 ```
 
-## ⚠️ 注意事项
+## Cloudflare Workers 部署
 
-1. **网络连接** - 请确保网络连接正常
-2. **访问限制** - 某些文章可能因为访问限制无法获取
-3. **磁盘空间** - 使用 `--download` 时确保有足够的磁盘空间
-4. **下载时间** - 图片和视频下载可能需要一些时间
-5. **链接时效** - 微信公众号的在线图片链接可能有时效性，建议使用 `--download`
-6. **法律法规** - 请遵守相关法律法规，仅用于个人学习和研究
+### 方案一：使用 Cloudflare Workers（推荐免费方案）
 
-## 📚 依赖项
+Cloudflare Workers 现在支持 Python，可以直接部署 FastAPI 应用。
 
-- Python 3.6+
-- requests - HTTP请求库
-- beautifulsoup4 - HTML解析库
-- html2text - HTML转Markdown库
-- lxml - XML和HTML解析器
-
-## ❓ 常见问题
-
-### Q: 为什么有些文章无法提取？
-
-A: 可能的原因：
-- 文章已被删除
-- 需要关注公众号才能查看
-- 网络连接问题
-- 微信公众号平台的访问限制
-
-### Q: 图片无法显示？
-
-A: 微信公众号的图片链接可能有时效性或访问限制。**建议使用 `--download` 参数将图片下载到本地**，这样可以确保图片永久可用。
+#### 1. 安装 Wrangler CLI
 
 ```bash
-python html2md.py "https://mp.weixin.qq.com/s/xxxxx" --download
+npm install -g wrangler
+# 或
+brew install wrangler
 ```
 
-### Q: 脚本能检测到媒体资源但没有下载？
-
-A: 默认情况下，脚本只提取在线链接而不下载。需要添加 `--download` 或 `-d` 参数才会下载资源到本地。
-
-### Q: 下载的图片和视频保存在哪里？
-
-A: 资源会保存在与Markdown文件同名的文件夹中。例如，如果Markdown文件名为 `article.md`，资源会保存在 `article_files/` 文件夹中。
-
-### Q: 如何批量下载多篇文章？
-
-A: 可以创建一个包含多个URL的文本文件，然后使用shell脚本批量处理：
+#### 2. 登录 Cloudflare
 
 ```bash
-#!/bin/bash
-while IFS= read -r url; do
-    python html2md.py "$url" --download
-done < urls.txt
+wrangler login
 ```
 
-### Q: 为什么知乎/小红书等平台提取效果不好？
+#### 3. 配置环境变量
 
-A: 不同平台的HTML结构差异很大，某些平台还有以下限制：
-- **需要登录** - 内容被登录墙拦截
-- **反爬虫机制** - 检测到非浏览器访问
-- **动态加载** - 内容由JavaScript生成
-- **HTML结构变化** - 网站更新了页面结构
+在 Cloudflare Dashboard 中设置以下环境变量：
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `SUPABASE_BUCKET`
 
-对于这些平台，建议使用浏览器插件（如MarkDownload）手动操作。
+或使用命令行：
 
-## 📜 更新日志
+```bash
+wrangler secret put SUPABASE_URL
+wrangler secret put SUPABASE_KEY
+wrangler secret put SUPABASE_BUCKET
+```
 
-查看 [CHANGELOG.md](CHANGELOG.md) 了解详细的更新历史。
+#### 4. 部署
 
-## 📄 许可证
+```bash
+wrangler deploy
+```
+
+### 方案二：使用 Cloudflare Pages Functions
+
+如果 Workers 不支持某些依赖，可以使用 Cloudflare Pages + Functions 方案。
+
+```bash
+# 创建 pages 目录结构
+mkdir -p functions
+# 将 API 逻辑放入 functions 目录
+# 使用 wrangler pages 命令部署
+```
+
+## 部署到其他平台
+
+### Railway
+
+```bash
+railway up
+```
+
+确保在 Railway 中设置环境变量：
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `SUPABASE_BUCKET`
+
+### Vercel
+
+```bash
+vercel deploy
+```
+
+### 传统服务器
+
+使用 systemd 或 supervisor 管理服务：
+
+```bash
+uvicorn api_service:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+## Supabase 配置
+
+### 1. 创建项目
+
+在 [Supabase](https://supabase.com) 创建新项目。
+
+### 2. 执行初始化 SQL
+
+在 SQL Editor 中执行 `supabase_init.sql` 内容。
+
+### 3. 创建存储桶
+
+在 Storage 中创建名为 `markdown-files` 的公开存储桶（或在环境变量中指定其他名称）。
+
+### 4. 获取凭证
+
+从 Project Settings > API 获取：
+- Project URL (SUPABASE_URL)
+- anon/public key (SUPABASE_KEY)
+
+## 项目结构
+
+```
+html2md/
+├── api_service.py          # FastAPI Web 服务
+├── html2md.py              # 核心转换逻辑
+├── requirements.txt        # Python 依赖
+├── runtime.txt            # Python 版本
+├── Procfile               # 进程配置
+├── Dockerfile             # Docker 配置
+├── wrangler.toml          # Cloudflare Workers 配置
+├── supabase_init.sql      # Supabase 初始化脚本
+├── setup_cloudflare.sh    # Cloudflare 部署脚本
+├── setup_supabase.sh      # Supabase 配置脚本
+├── start_api.sh           # 启动脚本
+└── .env.example           # 环境变量示例
+```
+
+## 核心依赖
+
+- **FastAPI**: 现代、快速的 Web 框架
+- **Uvicorn**: ASGI 服务器
+- **Supabase**: 后端即服务（存储 + 数据库）
+- **BeautifulSoup4**: HTML 解析
+- **html2text**: HTML 转 Markdown
+- **Requests**: HTTP 客户端
+
+## 注意事项
+
+### 1. URL3 版本限制
+
+项目使用 `urllib3<2.0` 以避免 HTTP/2 相关问题。如遇到网络错误，确保：
+
+```bash
+pip install 'urllib3<2.0'
+```
+
+### 2. Supabase 存储限制
+
+免费版 Supabase 有存储限制（1GB），注意监控使用量。
+
+### 3. Cloudflare Workers 限制
+
+- CPU 时间限制（免费版 10ms，付费版 50ms）
+- 内存限制（128MB）
+- 请求大小限制（100MB）
+
+如果遇到限制，考虑：
+- 使用 Cloudflare Pages Functions（更宽松的限制）
+- 部署到 Railway、Vercel 或传统服务器
+
+### 4. 媒体文件下载
+
+下载大量媒体文件可能较慢，可以：
+- 设置 `download_media=false` 只转换文本
+- 使用异步处理（通过 `callback_url` 参数）
+
+## 开发
+
+### 本地测试
+
+```bash
+# 启动服务
+python api_service.py
+
+# 测试 API
+curl http://localhost:8000/health
+curl "http://localhost:8000/api/convert?url=https://mp.weixin.qq.com/s/xxxxx"
+```
+
+### Docker
+
+```bash
+# 构建镜像
+docker build -t html2md-api .
+
+# 运行容器
+docker run -p 8000:8000 \
+  -e SUPABASE_URL=xxx \
+  -e SUPABASE_KEY=xxx \
+  -e SUPABASE_BUCKET=markdown-files \
+  html2md-api
+```
+
+## License
 
 MIT License
 
-## 🙏 致谢
+## 贡献
 
-感谢所有开源项目的贡献者！
-
----
-
-**推荐使用场景：**
-- ✅ 微信公众号文章归档
-- ✅ 技术博客内容保存
-- ✅ 学习资料整理
-- ✅ 离线阅读准备
+欢迎提交 Issue 和 Pull Request！
