@@ -260,10 +260,19 @@ async def root():
 async def health_check():
     """健康检查"""
     supabase_status = "connected" if storage else "not configured"
+
+    # 检查依赖版本
+    import requests
+    import urllib3
+
     return {
         "status": "healthy",
         "supabase": supabase_status,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "dependencies": {
+            "requests": requests.__version__,
+            "urllib3": urllib3.__version__
+        }
     }
 
 
