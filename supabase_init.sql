@@ -6,9 +6,20 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('markdown-files', 'markdown-files', true)
 ON CONFLICT (id) DO NOTHING;
 
--- 2. 设置存储桶访问策略（允许公开读取）
+-- 2. 设置存储桶访问策略
+-- 2.1 允许公开读取
 CREATE POLICY "Public Access"
 ON storage.objects FOR SELECT
+USING ( bucket_id = 'markdown-files' );
+
+-- 2.2 允许任何人上传文件
+CREATE POLICY "Allow Upload"
+ON storage.objects FOR INSERT
+WITH CHECK ( bucket_id = 'markdown-files' );
+
+-- 2.3 允许更新文件
+CREATE POLICY "Allow Update"
+ON storage.objects FOR UPDATE
 USING ( bucket_id = 'markdown-files' );
 
 -- 3. 创建转换记录表
@@ -24,12 +35,25 @@ CREATE TABLE IF NOT EXISTS conversions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. 创建索引
+-- 4. 设置 conversions 表的 RLS 策略
+ALTER TABLE conversions ENABLE ROW LEVEL SECURITY;
+
+-- 允许任何人插入记录
+CREATE POLICY "Allow Insert"
+ON conversions FOR INSERT
+WITH CHECK (true);
+
+-- 允许任何人查询记录
+CREATE POLICY "Allow Select"
+ON conversions FOR SELECT
+USING (true);
+
+-- 5. 创建索引
 CREATE INDEX IF NOT EXISTS idx_conversions_url ON conversions(url);
 CREATE INDEX IF NOT EXISTS idx_conversions_created_at ON conversions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversions_unique_id ON conversions(unique_id);
 
--- 5. 添加注释
+-- 6. 添加注释
 COMMENT ON TABLE conversions IS '记录所有 URL 转换历史';
 COMMENT ON COLUMN conversions.url IS '原始 URL';
 COMMENT ON COLUMN conversions.md_file_url IS 'Markdown 文件公开访问 URL';
@@ -38,7 +62,7 @@ COMMENT ON COLUMN conversions.download_media IS '是否下载了媒体资源';
 COMMENT ON COLUMN conversions.media_count IS '媒体文件数量';
 COMMENT ON COLUMN conversions.unique_id IS '转换的唯一标识';
 
--- 6. 创建更新时间触发器
+-- 7. 创建更新时间触发器
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -52,7 +76,7 @@ CREATE TRIGGER update_conversions_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- 7. 创建一个视图用于统计
+-- 8. 创建一个视图用于统计
 CREATE OR REPLACE VIEW conversion_stats AS
 SELECT
     DATE(created_at) as date,
@@ -65,7 +89,7 @@ ORDER BY date DESC;
 
 COMMENT ON VIEW conversion_stats IS '按日期统计转换数据';
 
--- 8. 可选: 创建飞书集成相关的表
+-- 9. 可选: 创建飞书集成相关的表
 CREATE TABLE IF NOT EXISTS feishu_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id TEXT UNIQUE NOT NULL,
@@ -80,6 +104,25 @@ CREATE TABLE IF NOT EXISTS feishu_records (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 10. 设置 feishu_records 表的 RLS 策略
+ALTER TABLE feishu_records ENABLE ROW LEVEL SECURITY;
+
+-- 允许任何人插入记录
+CREATE POLICY "Allow Insert Feishu"
+ON feishu_records FOR INSERT
+WITH CHECK (true);
+
+-- 允许任何人查询记录
+CREATE POLICY "Allow Select Feishu"
+ON feishu_records FOR SELECT
+USING (true);
+
+-- 允许更新记录
+CREATE POLICY "Allow Update Feishu"
+ON feishu_records FOR UPDATE
+USING (true);
+
+-- 11. 创建索引
 CREATE INDEX IF NOT EXISTS idx_feishu_records_status ON feishu_records(status);
 CREATE INDEX IF NOT EXISTS idx_feishu_records_created_at ON feishu_records(created_at DESC);
 

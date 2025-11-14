@@ -117,19 +117,39 @@ class SupabaseStorage:
         """
         uploaded_files = {}
         local_dir_path = Path(local_dir)
+        file_counter = {}  # 用于计数不同类型的文件
 
         for file_path in local_dir_path.rglob("*"):
             if file_path.is_file():
-                # 计算相对路径
-                rel_path = file_path.relative_to(local_dir_path.parent)
-                remote_path = f"{remote_prefix}/{rel_path}"
+                # 跳过Markdown文件（已单独上传）
+                if file_path.suffix == '.md':
+                    continue
+
+                # 根据扩展名生成安全的文件名
+                extension = file_path.suffix.lower()
+
+                # 获取文件类型计数
+                if extension not in file_counter:
+                    file_counter[extension] = 0
+                file_counter[extension] += 1
+
+                # 生成安全的远程文件名：prefix/type_001.ext
+                if extension in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                    file_type = 'image'
+                elif extension in ['.mp4', '.mov', '.avi']:
+                    file_type = 'video'
+                else:
+                    file_type = 'file'
+
+                safe_filename = f"{file_type}_{file_counter[extension]:03d}{extension}"
+                remote_path = f"{remote_prefix}/{safe_filename}"
 
                 # 上传文件
                 with open(file_path, 'rb') as f:
                     file_data = f.read()
 
                 # 确定 content-type
-                content_type = self._get_content_type(file_path.suffix)
+                content_type = self._get_content_type(extension)
 
                 self.client.storage.from_(self.bucket).upload(
                     remote_path,
@@ -210,18 +230,19 @@ def process_conversion(url: str, download_media: bool) -> dict:
         if not storage:
             raise Exception("Supabase storage not configured")
 
-        # 远程路径前缀
-        remote_prefix = f"{unique_id}/{base_name}"
+        # 使用 URL 安全的文件名（避免中文和特殊字符）
+        safe_filename = f"{unique_id}.md"
 
         # 上传 Markdown 文件
-        md_remote_path = f"{unique_id}/{md_filename}"
+        md_remote_path = safe_filename
         md_public_url = storage.upload_file(md_file_path, md_remote_path)
 
         # 上传媒体文件（如果有）
         media_files = {}
         media_dir = os.path.join(output_dir, f"{base_name}_files")
         if download_media and os.path.exists(media_dir):
-            media_files = storage.upload_directory(output_dir, unique_id)
+            # 使用 unique_id 作为远程路径前缀，确保路径安全
+            media_files = storage.upload_directory(output_dir, f"{unique_id}_files")
 
         # 保存元数据
         metadata = {
