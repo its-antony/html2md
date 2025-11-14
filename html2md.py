@@ -531,8 +531,9 @@ class HTML2Markdown:
             Path(filepath).write_text(content, encoding='utf-8')
             print(f"✓ 文章已保存到: {filepath}")
         except Exception as e:
-            print(f"错误: 保存文件失败 - {e}")
-            sys.exit(1)
+            error_msg = f"保存文件失败 - {e}"
+            print(f"错误: {error_msg}")
+            raise Exception(error_msg)
 
     def convert(self, url, output_path=None, output_dir='output'):
         """主转换流程"""
@@ -546,8 +547,9 @@ class HTML2Markdown:
         # 获取网页内容
         html_content = self.fetch_page(url)
         if not html_content:
-            print("错误: 无法获取网页内容")
-            sys.exit(1)
+            error_msg = "无法获取网页内容"
+            print(f"错误: {error_msg}")
+            raise Exception(error_msg)
 
         # 解析页面
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -555,14 +557,14 @@ class HTML2Markdown:
         article = parser.parse(soup)
 
         if not article['content']:
-            print(f"警告: 未能找到文章内容")
-            print(f"提示: {platform_name}的页面结构可能已更新，需要调整解析规则")
+            error_msg = f"未能找到文章内容 - {platform_name}的页面结构可能已更新，需要调整解析规则"
+            print(f"警告: {error_msg}")
             # 保存原始HTML用于调试
             debug_file = Path(output_dir) / 'debug.html'
             debug_file.parent.mkdir(exist_ok=True)
             debug_file.write_text(html_content, encoding='utf-8')
             print(f"已保存原始HTML到: {debug_file}（可用于调试）")
-            sys.exit(1)
+            raise Exception(error_msg)
 
         print(f"✓ 成功解析文章")
         if article['title']:
