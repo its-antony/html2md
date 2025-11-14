@@ -322,4 +322,6 @@ async def convert_url_get(url: str, download_media: bool = True):
 # 如果使用 Cloudflare Workers Python，需要特殊处理
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 从环境变量获取端口，默认为8000
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
