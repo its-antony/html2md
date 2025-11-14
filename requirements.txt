@@ -14,3 +14,6 @@ python-multipart>=0.0.6
 # Supabase 存储
 supabase>=2.0.0
 postgrest>=0.13.0
+
+# Playwright（可选，用于处理动态渲染和验证）
+playwright>=1.40.0

@@ -95,6 +95,16 @@ class WechatParser(BaseParser):
         self.platform_name = '微信公众号'
 
     def parse(self, soup):
+        # 检测是否是轮播图格式
+        is_carousel = soup.find('div', class_='share_content_page') is not None
+
+        if is_carousel:
+            return self._parse_carousel(soup)
+        else:
+            return self._parse_regular(soup)
+
+    def _parse_regular(self, soup):
+        """解析常规文章"""
         # 提取标题
         title = None
         title_tag = soup.find('h1', class_='rich_media_title')
@@ -129,6 +139,72 @@ class WechatParser(BaseParser):
             'title': title,
             'author': author,
             'publish_time': publish_time,
+            'content': content
+        }
+
+    def _parse_carousel(self, soup):
+        """解析轮播图格式文章"""
+        import re
+        import json
+        from bs4 import BeautifulSoup as BS
+
+        # 提取标题（从JavaScript变量）
+        title = None
+        script_text = str(soup)
+        title_match = re.search(r'window\.msg_title\s*=\s*[\'"]([^\'"]*)[\'"]', script_text)
+        if title_match:
+            title = title_match.group(1)
+
+        # 提取作者（从页面元素）
+        author = None
+        author_tag = soup.find('div', class_='wx_follow_nickname')
+        if author_tag:
+            author = author_tag.get_text().strip()
+
+        # 解析轮播图数据
+        picture_list_match = re.search(r'window\.picture_page_info_list\s*=\s*\[(.*?)\];', script_text, re.DOTALL)
+
+        if not picture_list_match:
+            print("警告: 未找到轮播图数据")
+            return {
+                'title': title,
+                'author': author,
+                'publish_time': None,
+                'content': None
+            }
+
+        # 提取所有图片URL
+        cdn_urls = re.findall(r'cdn_url:\s*[\'"]([^\'"]+)[\'"]', picture_list_match.group(1))
+
+        if not cdn_urls:
+            print("警告: 轮播图数据中未找到图片URL")
+            return {
+                'title': title,
+                'author': author,
+                'publish_time': None,
+                'content': None
+            }
+
+        # 创建包含所有轮播图的HTML内容
+        content_html = '<div class="carousel-content">\n'
+        content_html += f'<h2>📷 图片轮播 ({len(cdn_urls)}张)</h2>\n'
+
+        for i, url in enumerate(cdn_urls, 1):
+            # 清理URL中的转义字符
+            url = url.replace('\\x26amp;', '&').replace('\\x26', '&')
+            content_html += f'<p><img src="{url}" alt="轮播图 {i}" /></p>\n'
+
+        content_html += '</div>'
+
+        # 转换为BeautifulSoup对象以保持兼容性
+        content = BS(content_html, 'html.parser')
+
+        print(f"✓ 成功解析轮播图格式，包含 {len(cdn_urls)} 张图片")
+
+        return {
+            'title': title,
+            'author': author,
+            'publish_time': None,
             'content': content
         }
 
@@ -330,14 +406,55 @@ class HTML2Markdown:
             'generic': GenericParser()
         }
 
-    def fetch_page(self, url):
-        """获取网页内容"""
-        max_retries = 5  # 增加重试次数
+    def _fetch_with_playwright(self, url):
+        """使用Playwright获取页面（处理动态内容和验证）"""
+        try:
+            from playwright.sync_api import sync_playwright
+            print("正在使用浏览器模式获取页面...")
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent=self.headers['User-Agent'],
+                    viewport={'width': 1920, 'height': 1080},
+                    locale='zh-CN'
+                )
+                page = context.new_page()
+
+                # 设置额外的请求头
+                page.set_extra_http_headers({
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                    'Referer': 'https://mp.weixin.qq.com/'
+                })
+
+                # 访问页面并等待加载完成
+                page.goto(url, wait_until='networkidle', timeout=60000)
+
+                # 等待一下确保动态内容加载
+                page.wait_for_timeout(2000)
+
+                # 获取页面内容
+                content = page.content()
+                browser.close()
+
+                print("✓ 浏览器模式获取成功")
+                return content
+
+        except ImportError:
+            print("警告: Playwright未安装，无法使用浏览器模式")
+            print("  安装方法: pip install playwright && playwright install chromium")
+            return None
+        except Exception as e:
+            print(f"警告: 浏览器模式获取失败 - {e}")
+            return None
+
+    def _fetch_with_requests(self, url):
+        """使用requests获取页面（快速轻量）"""
+        max_retries = 5
         import time
 
         for attempt in range(max_retries):
             try:
-                # 使用更兼容的配置
                 response = self.session.get(
                     url,
                     headers=self.headers,
@@ -352,19 +469,18 @@ class HTML2Markdown:
                 error_msg = str(e)
                 # 特殊处理HTTP/2 StreamReset错误
                 if 'StreamReset' in error_msg or 'stream_id' in error_msg:
-                    wait_time = (attempt + 1) * 2  # 指数退避：2s, 4s, 6s, 8s, 10s
+                    wait_time = (attempt + 1) * 2
                     print(f"警告: HTTP/2连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
                     if attempt < max_retries - 1:
                         print(f"  等待 {wait_time} 秒后重试...")
                         time.sleep(wait_time)
                         # 重新创建session，强制使用HTTP/1.1
-                        if attempt >= 2:  # 从第3次尝试开始禁用HTTP/2
+                        if attempt >= 2:
                             import requests
                             from requests.adapters import HTTPAdapter
                             from urllib3.util.retry import Retry
 
                             self.session = requests.Session()
-                            # 配置重试策略
                             retry_strategy = Retry(
                                 total=3,
                                 backoff_factor=1,
@@ -376,7 +492,7 @@ class HTML2Markdown:
                             print("  已切换到 HTTP/1.1")
                         continue
                     else:
-                        raise  # 最后一次尝试仍失败
+                        raise
                 elif 'ConnectionError' in error_msg or 'timeout' in error_msg.lower():
                     wait_time = (attempt + 1) * 2
                     print(f"警告: 网络错误 (尝试 {attempt + 1}/{max_retries}): {e}")
@@ -387,11 +503,54 @@ class HTML2Markdown:
                     else:
                         raise
                 else:
-                    # 其他错误直接抛出
                     print(f"错误: 无法获取网页内容 - {e}")
                     raise
 
         return None
+
+    def fetch_page(self, url):
+        """
+        智能获取网页内容（自动fallback到Playwright）
+
+        策略:
+        1. 默认使用requests（快速轻量）
+        2. 如果requests失败，自动fallback到Playwright（处理验证和动态内容）
+        3. 可通过环境变量USE_PLAYWRIGHT=true强制使用Playwright
+        """
+        import os
+
+        use_playwright = os.getenv('USE_PLAYWRIGHT', 'false').lower() == 'true'
+
+        if use_playwright:
+            # 强制使用Playwright
+            print("强制使用浏览器模式...")
+            content = self._fetch_with_playwright(url)
+            if content:
+                return content
+            raise Exception("Playwright获取失败")
+        else:
+            # 智能fallback策略
+            try:
+                print("正在使用快速模式获取页面...")
+                content = self._fetch_with_requests(url)
+
+                # 检测是否是验证页面
+                if content and ('验证' in content or '未知错误' in content) and len(content) < 5000:
+                    print("检测到可能的验证页面，切换到浏览器模式...")
+                    playwright_content = self._fetch_with_playwright(url)
+                    if playwright_content:
+                        return playwright_content
+                    print("警告: 浏览器模式也无法获取，使用原始内容")
+
+                return content
+            except Exception as e:
+                print(f"快速模式失败: {e}")
+                print("尝试使用浏览器模式...")
+                content = self._fetch_with_playwright(url)
+                if content:
+                    return content
+                # 两种方式都失败，抛出原始错误
+                raise
 
     def download_file(self, url, save_path):
         """下载单个文件"""
