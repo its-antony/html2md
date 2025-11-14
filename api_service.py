@@ -60,6 +60,8 @@ class SupabaseStorage:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
 
+        # 创建Supabase客户端（暂时使用默认配置）
+        # TODO: 配置httpx使用HTTP/1.1需要更深入的Supabase客户端定制
         self.client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         self.bucket = SUPABASE_BUCKET
         self._ensure_bucket()
@@ -81,7 +83,7 @@ class SupabaseStorage:
 
     def upload_file(self, local_path: str, remote_path: str) -> str:
         """
-        上传文件到 Supabase Storage
+        上传文件到 Supabase Storage（带重试机制）
 
         Args:
             local_path: 本地文件路径
@@ -90,19 +92,37 @@ class SupabaseStorage:
         Returns:
             公开访问 URL
         """
+        import time
+
         with open(local_path, 'rb') as f:
             file_data = f.read()
 
-        # 上传文件
-        self.client.storage.from_(self.bucket).upload(
-            remote_path,
-            file_data,
-            file_options={"content-type": "text/markdown; charset=utf-8"}
-        )
+        # 重试上传（应对HTTP/2 StreamReset错误）
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                # 上传文件
+                self.client.storage.from_(self.bucket).upload(
+                    remote_path,
+                    file_data,
+                    file_options={"content-type": "text/markdown; charset=utf-8"}
+                )
 
-        # 获取公开 URL
-        public_url = self.client.storage.from_(self.bucket).get_public_url(remote_path)
-        return public_url
+                # 获取公开 URL
+                public_url = self.client.storage.from_(self.bucket).get_public_url(remote_path)
+                return public_url
+
+            except Exception as e:
+                error_msg = str(e)
+                if 'StreamReset' in error_msg or 'stream_id' in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2
+                        print(f"  Supabase上传失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                        print(f"  等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                        continue
+                # 非StreamReset错误或最后一次尝试失败，直接抛出
+                raise
 
     def upload_directory(self, local_dir: str, remote_prefix: str) -> dict:
         """
