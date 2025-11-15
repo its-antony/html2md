@@ -17,6 +17,7 @@ import uuid
 
 from html2md import HTML2Markdown
 from supabase import create_client, Client
+from wechat_search import WechatArticleSearcher
 
 # 环境变量配置（移除所有空白字符包括换行符）
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
@@ -466,6 +467,60 @@ async def convert_url_get(url: str, download_media: bool = True):
         raise HTTPException(
             status_code=500,
             detail=f"转换失败: {str(e)}"
+        )
+
+
+@app.get("/api/search")
+async def search_wechat_articles(
+    keyword: str,
+    account: str = None,
+    page: int = 1,
+    time_range: str = None,
+    use_playwright: bool = False
+):
+    """
+    搜索微信公众号文章（基于搜狗搜索）
+
+    参数:
+    - keyword: 搜索关键词
+    - account: 公众号名称（可选）
+    - page: 页码（默认1）
+    - time_range: 时间范围 (day/week/month/year)
+    - use_playwright: 是否使用浏览器模式（处理反爬虫）
+
+    返回:
+    - 文章列表，每篇文章包含 title, url, author, publish_time, abstract
+    """
+    try:
+        searcher = WechatArticleSearcher(use_playwright=use_playwright)
+
+        # 根据参数选择搜索方式
+        if account and keyword:
+            # 组合搜索
+            articles = searcher.search_by_account(account, keyword, page)
+        elif account:
+            # 只搜索公众号
+            articles = searcher.search_by_account(account, page=page)
+        else:
+            # 只搜索关键词
+            articles = searcher.search_articles(keyword, page, time_range)
+
+        return {
+            "success": True,
+            "message": f"找到 {len(articles)} 篇文章",
+            "data": {
+                "keyword": keyword,
+                "account": account,
+                "page": page,
+                "articles": articles,
+                "total": len(articles)
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"搜索失败: {str(e)}"
         )
 
 
